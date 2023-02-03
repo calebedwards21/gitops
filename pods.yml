@@ -1,0 +1,206 @@
+##################################################################################################
+# Httpbin service
+##################################################################################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  labels:
+    app: httpbin
+    service: httpbin
+spec:
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 80
+  selector:
+    app: httpbin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        version: v1
+    spec:
+      serviceAccountName: httpbin
+      containers:
+      - image: docker.io/kennethreitz/httpbin
+        imagePullPolicy: IfNotPresent
+        name: httpbin
+        ports:
+        - containerPort: 80
+--- 
+##################################################################################################
+# Sleep service
+##################################################################################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sleep
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sleep
+  labels:
+    app: sleep
+    service: sleep
+spec:
+  ports:
+  - port: 80
+    name: http
+  selector:
+    app: sleep
+---
+apiVersion: apps/v1 # required
+kind: Deployment  # required
+metadata: # required
+  name: sleep # required - DNS subdomain
+spec: # required - deployment spec
+  replicas: 1 # default=1
+  selector: # required
+    matchLabels: # must match .spec.template.metadata.labels
+      app: sleep
+  template: # required - pod template - whenever this changes / old pods do not get these changes
+    metadata:
+      labels:
+        app: sleep
+    spec: # pod spec
+      terminationGracePeriodSeconds: 0
+      serviceAccountName: sleep
+      containers:
+      - name: sleep
+        image: curlimages/curl # https://hub.docker.com/r/curlimages/curl#:~:text=curl%20is%20a%20command%20line,or%20scripts%20to%20transfer%20data.
+        command: ["/bin/sleep", "infinity"]
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - mountPath: /etc/sleep/tls
+          name: secret-volume
+      volumes:
+      - name: secret-volume
+        secret:
+          secretName: sleep-secret
+          optional: true
+---
+##################################################################################################
+# Demo Server service
+##################################################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-server
+  labels:
+    app: demo-server
+    service: demo-server
+spec:
+  ports:
+  - port: 8001
+    targetPort: 80
+    name: demo-server
+  selector:
+    app: demo-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-server
+  template:
+    metadata:
+      labels:
+        app: demo-server
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+      - name: server
+        image: k8s.gcr.io/e2e-test-images/agnhost:2.33 # https://pkg.go.dev/k8s.io/kubernetes/test/images/agnhost#section-readme
+        # Fix command and args to start server on deployment
+        command: ["/agnhost"]
+        args: ["serve-hostname", "--tcp", "--http=false", "--port", "80"]
+        # /agnhost serve-hostname --tcp --http=false --port "80"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        - containerPort: 8080
+          protocol: TCP
+        - containerPort: 53
+          protocol: UDP
+---
+##################################################################################################
+# Demo Client service
+##################################################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-client
+  labels:
+    app: demo-client
+    service: demo-client
+spec:
+  ports:
+  - port: 80
+    name: http
+  selector:
+    app: demo-client
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-client
+  template:
+    metadata:
+      labels:
+        app: demo-client
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+      - name: client
+        image: k8s.gcr.io/e2e-test-images/agnhost:2.33
+        imagePullPolicy: IfNotPresent
+---
+##################################################################################################
+# NGINX service
+##################################################################################################
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nginx-deployment
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        ports:
+        - containerPort: 80
